@@ -10,15 +10,14 @@ RUN apt-get update && apt-get install -y \
     make \
     cmake \
     libssl-dev \
-    libmbedtls-dev \
     zip \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/zhlynn/zsign.git /tmp/zsign \
+RUN git clone --recursive https://github.com/zhlynn/zsign.git /tmp/zsign \
     && cd /tmp/zsign \
     && mkdir build && cd build \
-    && cmake -DENABLE_OPENSSL=ON .. \
+    && cmake .. \
     && make \
     && cp zsign /usr/local/bin/ \
     && rm -rf /tmp/zsign
