@@ -19,13 +19,13 @@ from telegram.ext import (
     filters,
 )
 
-# 1. تشغيل سيرفر خفيف لإبقاء الخدمة نشطة على Render
+# 1. سيرفر خفيف لإبقاء الخدمة نشطة على Render
 flask_app = Flask(__name__)
 
 
 @flask_app.route('/')
 def index():
-  return 'البوت يعمل بنجاح!', 200
+  return 'Bot is running perfectly!', 200
 
 
 def run_flask():
@@ -35,7 +35,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# 2. إعدادات البوت والبيانات الأساسية
+# 2. الإعدادات والمتغيرات
 TOKEN = os.environ.get(
     'BOT_TOKEN', '8686601094:AAEViStOO6vokqRvEDnFY8Wj2LwtY0eqKHc'
 )
@@ -47,8 +47,8 @@ GITHUB_PAGES_URL = 'https://srtttt7.github.io/Ipa-/index.html'
 WAITING_P12, WAITING_PROV, WAITING_PASS, WAITING_IPA = range(4)
 
 
-# 3. وظائف قراءة معلومات التطبيق والرفع
-def get_ipa_info(ipa_path):
+# 3. وظائف معالجة الملفات والرفع
+def get_ipa_info(ipa_path: str):
   app_name, bundle_id, app_version = 'تطبيق', 'com.app.signed', '1.0'
   try:
     with zipfile.ZipFile(ipa_path, 'r') as zip_ref:
@@ -67,11 +67,11 @@ def get_ipa_info(ipa_path):
           )
           break
   except Exception as e:
-    print('خطأ في قراءة IPA:', e)
+    print(f'Error reading IPA: {e}')
   return app_name, bundle_id, app_version
 
 
-def upload_file_catbox(file_path):
+def upload_file_catbox(file_path: str):
   try:
     url = 'https://catbox.moe/user/api.php'
     data = {'reqtype': 'fileupload'}
@@ -81,11 +81,17 @@ def upload_file_catbox(file_path):
       if res.status_code == 200:
         return res.text.strip()
   except Exception as e:
-    print('خطأ في الرفع:', e)
+    print(f'Upload error: {e}')
   return None
 
 
-def make_direct_ota(ipa_url, bundle_id, app_version, app_name, user_dir):
+def make_direct_ota(
+    ipa_url: str,
+    bundle_id: str,
+    app_version: str,
+    app_name: str,
+    user_dir: str,
+):
   plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -118,7 +124,7 @@ def make_direct_ota(ipa_url, bundle_id, app_version, app_name, user_dir):
 </dict>
 </plist>"""
 
-  plist_path = f'{user_dir}/manifest.plist'
+  plist_path = os.path.join(user_dir, 'manifest.plist')
   with open(plist_path, 'w', encoding='utf-8') as f:
     f.write(plist_content)
 
@@ -133,7 +139,7 @@ def make_direct_ota(ipa_url, bundle_id, app_version, app_name, user_dir):
   return None, None
 
 
-# 4. تحقق الاشتراك الاجباري
+# 4. التحقق من الاشتراك
 async def is_user_subscribed(
     user_id: int, context: ContextTypes.DEFAULT_TYPE
 ) -> bool:
@@ -161,10 +167,7 @@ async def check_subscription_guard(
         ],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = (
-        '⚠️ يجب عليك الاشتراك في القناة أولاً لاستخدام البوت:\n'
-        + CHANNEL_USERNAME
-    )
+    text = f'⚠️ يجب عليك الاشتراك في القناة أولاً لاستخدام البوت:\n{CHANNEL_USERNAME}'
 
     if update.callback_query:
       await update.callback_query.message.reply_text(
@@ -176,7 +179,7 @@ async def check_subscription_guard(
   return True
 
 
-# 5. القائمة الرئيسية والمعالجات
+# 5. الأوامر الأساسية
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   if not await check_subscription_guard(update, context):
     return ConversationHandler.END
@@ -214,7 +217,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# 6. خطوات رفع الشهادة (.p12 و .mobileprovision والسر)
+# 6. خطوات رفع الشهادة
 async def cert_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
@@ -242,7 +245,7 @@ async def process_p12(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_P12
 
   file = await context.bot.get_file(doc.file_id)
-  await file.download_to_drive(f'{user_dir}/cert.p12')
+  await file.download_to_drive(os.path.join(user_dir, 'cert.p12'))
 
   await update.message.reply_text(
       '✅ تم حفظ ملف `.p12` بنجاح!\n\n2️⃣ **الخطوة الثانية:** أرسل الآن ملف'
@@ -254,7 +257,6 @@ async def process_p12(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_prov(update: Update, context: ContextTypes.DEFAULT_TYPE):
   user_id = update.effective_user.id
   user_dir = f'users/{user_id}'
-  os.makedirs(user_dir, exist_ok=True)
 
   doc = update.message.document
   file_name = doc.file_name.lower() if doc and doc.file_name else ''
@@ -268,7 +270,7 @@ async def process_prov(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_PROV
 
   file = await context.bot.get_file(doc.file_id)
-  await file.download_to_drive(f'{user_dir}/cert.mobileprovision')
+  await file.download_to_drive(os.path.join(user_dir, 'cert.mobileprovision'))
 
   await update.message.reply_text(
       '✅ تم حفظ ملف `.mobileprovision` بنجاح!\n\n3️⃣ **الخطوة الثالثة:**'
@@ -285,24 +287,24 @@ async def process_pass(update: Update, context: ContextTypes.DEFAULT_TYPE):
   if password == '0':
     password = ''
 
-  with open(f'{user_dir}/pass.txt', 'w') as f:
+  with open(os.path.join(user_dir, 'pass.txt'), 'w') as f:
     f.write(password)
 
   await update.message.reply_text(
-      '🎉 تم حفظ الشهادة بنجاح! إضغط على زر "توقيع تطبيق IPA" وأرسل تطبيقك.'
+      '🎉 تم حفظ الشهادة بنجاح! اضغط على "توقيع تطبيق IPA" وأرسل تطبيقك.'
   )
   return ConversationHandler.END
 
 
-# 7. عملية استقبال وتوقيع الـ IPA عبر isign
+# 7. التوقيع عبر isign
 async def start_sign_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
 
   user_id = update.effective_user.id
   user_dir = os.path.abspath(f'users/{user_id}')
-  p12_path = f'{user_dir}/cert.p12'
-  prov_path = f'{user_dir}/cert.mobileprovision'
+  p12_path = os.path.join(user_dir, 'cert.p12')
+  prov_path = os.path.join(user_dir, 'cert.mobileprovision')
 
   if not os.path.exists(p12_path) or not os.path.exists(prov_path):
     await query.message.reply_text(
@@ -323,16 +325,15 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
   user_id = update.effective_user.id
   user_dir = os.path.abspath(f'users/{user_id}')
   doc = update.message.document
-
   file_name = doc.file_name.lower() if doc and doc.file_name else ''
 
   if not doc or not file_name.endswith('.ipa'):
     await update.message.reply_text('❌ يرجى إرسال ملف بصيغة `.ipa` فقط!')
     return WAITING_IPA
 
-  p12_path = f'{user_dir}/cert.p12'
-  prov_path = f'{user_dir}/cert.mobileprovision'
-  pass_path = f'{user_dir}/pass.txt'
+  p12_path = os.path.join(user_dir, 'cert.p12')
+  prov_path = os.path.join(user_dir, 'cert.mobileprovision')
+  pass_path = os.path.join(user_dir, 'pass.txt')
 
   p12_pass = ''
   if os.path.exists(pass_path):
@@ -342,8 +343,8 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
   status_msg = await update.message.reply_text('⏳ جاري تنزيل ملف الـ IPA...')
   file = await context.bot.get_file(doc.file_id)
 
-  input_ipa = f'{user_dir}/input.ipa'
-  output_ipa = f'{user_dir}/signed_{doc.file_name}'
+  input_ipa = os.path.join(user_dir, 'input.ipa')
+  output_ipa = os.path.join(user_dir, f'signed_{doc.file_name}')
 
   if os.path.exists(input_ipa):
     os.remove(input_ipa)
@@ -353,7 +354,7 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await file.download_to_drive(input_ipa)
   await status_msg.edit_text('✍️ جاري توقيع التطبيق...')
 
-  # التوقيع باستعمال isign المجهزة بـ Python
+  # أمر التوقيع باستخدام أداة isign
   cmd = f'isign -c "{p12_path}" -k "{p12_pass}" -p "{prov_path}" -o "{output_ipa}" "{input_ipa}"'
   process = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
@@ -366,7 +367,7 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ipa_download_url = upload_file_catbox(output_ipa)
 
     if ipa_download_url:
-      install_button_url, plist_url = make_direct_ota(
+      install_button_url, _ = make_direct_ota(
           ipa_download_url, bundle_id, app_version, app_name, user_dir
       )
 
@@ -401,7 +402,7 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# 8. الأزرار التفاعلية
+# 8. معالجة الأزرار العادية
 async def callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -423,15 +424,19 @@ async def callback_handler(
 
   if query.data == 'check_cert':
     p12_exists = (
-        '✅ موجود' if os.path.exists(f'{user_dir}/cert.p12') else '❌ غير موجود'
+        '✅ موجود'
+        if os.path.exists(os.path.join(user_dir, 'cert.p12'))
+        else '❌ غير موجود'
     )
     prov_exists = (
         '✅ موجود'
-        if os.path.exists(f'{user_dir}/cert.mobileprovision')
+        if os.path.exists(os.path.join(user_dir, 'cert.mobileprovision'))
         else '❌ غير موجود'
     )
     pass_exists = (
-        '✅ مضافة' if os.path.exists(f'{user_dir}/pass.txt') else '❌ غير مضافة'
+        '✅ مضافة'
+        if os.path.exists(os.path.join(user_dir, 'pass.txt'))
+        else '❌ غير مضافة'
     )
 
     msg = f'📊 **حالة الشهادة الحالية:**\n\n• ملف `.p12`: {p12_exists}\n• ملف `.mobileprovision`: {prov_exists}\n• كلمة سر الشهادة: {pass_exists}'
@@ -439,9 +444,9 @@ async def callback_handler(
 
   elif query.data == 'delete_cert':
     files_to_remove = [
-        f'{user_dir}/cert.p12',
-        f'{user_dir}/cert.mobileprovision',
-        f'{user_dir}/pass.txt',
+        os.path.join(user_dir, 'cert.p12'),
+        os.path.join(user_dir, 'cert.mobileprovision'),
+        os.path.join(user_dir, 'pass.txt'),
     ]
     deleted = False
     for f in files_to_remove:
@@ -520,4 +525,4 @@ if __name__ == '__main__':
   app.add_handler(CallbackQueryHandler(callback_handler))
 
   print('البوت يعمل الآن...')
-  app.run_polling()
+  app.run_polling(drop_pending_updates=True)
