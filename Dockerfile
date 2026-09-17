@@ -1,10 +1,20 @@
 FROM python:3.10-slim
 
 RUN apt-get update && apt-get install -y \
-    zsign \
-    proot \
+    build-essential \
+    cmake \
+    git \
+    libssl-dev \
     zip \
     && rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/zhlynn/zsign.git /tmp/zsign \
+    && cd /tmp/zsign \
+    && mkdir build && cd build \
+    && cmake .. \
+    && make \
+    && cp zsign /usr/local/bin/ \
+    && rm -rf /tmp/zsign
 
 WORKDIR /app
 COPY . /app
