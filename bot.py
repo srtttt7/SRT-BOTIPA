@@ -19,13 +19,13 @@ from telegram.ext import (
     filters,
 )
 
-# 1. تشغيل سيرفر Flask لإبقاء الخدمة نشطة
+# 1. تشغيل سيرفر Flask لإبقاء الخدمة نشطة على Render
 flask_app = Flask(__name__)
 
 
 @flask_app.route('/')
 def index():
-  return 'Bot is running perfectly!', 200
+  return 'Bot is running perfectly with zsign!', 200
 
 
 def run_flask():
@@ -47,7 +47,7 @@ GITHUB_PAGES_URL = 'https://srtttt7.github.io/Ipa-/index.html'
 WAITING_P12, WAITING_PROV, WAITING_PASS, WAITING_IPA = range(4)
 
 
-# 3. وظائف معالجة البيانات والرفع
+# 3. وظائف قراءة IPA والرفع
 def get_ipa_info(ipa_path: str):
   app_name, bundle_id, app_version = 'تطبيق', 'com.app.signed', '1.0'
   try:
@@ -179,7 +179,7 @@ async def check_subscription_guard(
   return True
 
 
-# 5. الواجهة والأوامر
+# 5. الواجهة الرئيسية
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   if not await check_subscription_guard(update, context):
     return ConversationHandler.END
@@ -217,7 +217,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# 6. استقبال الشهادات
+# 6. مسار رفع الشهادة
 async def cert_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
@@ -296,7 +296,7 @@ async def process_pass(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# 7. التوقيع وطباعة السجلات لتتبع الأخطاء
+# 7. عملية التوقيع عبر zsign
 async def start_sign_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
@@ -352,20 +352,19 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(output_ipa)
 
   await file.download_to_drive(input_ipa)
-  await status_msg.edit_text('✍️ جاري توقيع التطبيق...')
+  await status_msg.edit_text('✍️ جاري توقيع التطبيق باستخدام zsign...')
 
-  # تشغيل أداة isign مع تتبع نتائج المخرجات
+  # تشغيل أداة zsign للتوقيع
   if p12_pass:
-    cmd = f'isign -c "{p12_path}" -k "{p12_pass}" -p "{prov_path}" -o "{output_ipa}" "{input_ipa}"'
+    cmd = f'zsign -k "{p12_path}" -p "{p12_pass}" -m "{prov_path}" -o "{output_ipa}" -z 9 "{input_ipa}"'
   else:
-    cmd = f'isign -c "{p12_path}" -p "{prov_path}" -o "{output_ipa}" "{input_ipa}"'
+    cmd = f'zsign -k "{p12_path}" -m "{prov_path}" -o "{output_ipa}" -z 9 "{input_ipa}"'
 
   process = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
-  # طباعة المخرجات لتسجيلات Render
-  print('--- ISIGN OUTPUT STDOUT ---')
+  print('--- ZSIGN STDOUT ---')
   print(process.stdout)
-  print('--- ISIGN OUTPUT STDERR ---')
+  print('--- ZSIGN STDERR ---')
   print(process.stderr)
 
   if process.returncode == 0 and os.path.exists(output_ipa):
@@ -412,7 +411,7 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# 8. معالجة باقي الخيارات
+# 8. معالجة القوائم والتنظيف
 async def callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -466,8 +465,7 @@ async def callback_handler(
 
     if deleted:
       await query.message.reply_text(
-          '🗑️ **تم حذف جميع ملفات الشهادة المرفوقة بنجاح.**',
-          parse_mode='Markdown',
+          '🗑️ **تم حذف جميع ملفات الشهادة بنجاح.**', parse_mode='Markdown'
       )
     else:
       await query.message.reply_text('ℹ️ لا توجد شهادة مضافة لحذفها.')
@@ -534,5 +532,5 @@ if __name__ == '__main__':
   app.add_handler(sign_handler)
   app.add_handler(CallbackQueryHandler(callback_handler))
 
-  print('البوت يعمل الآن...')
+  print('البوت يعمل الآن بصورة كاملة...')
   app.run_polling(drop_pending_updates=True)
