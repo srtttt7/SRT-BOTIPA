@@ -1,28 +1,29 @@
 FROM python:3.10-slim
 
-# 1. تثبيت الحزم والأدوات اللازمة لتجميع أداة zsign
+# تثبيت التبعيات الأساسية
 RUN apt-get update && apt-get install -y \
     build-essential \
     git \
     libssl-dev \
     zip \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. تحميل وتجميع أداة zsign بنجاح
-RUN git clone https://github.com/zhly201/zsign.git /tmp/zsign \
-    && cd /tmp/zsign \
-    && g++ *.cpp common/*.cpp -lcrypto -O3 -o /usr/local/bin/zsign \
-    && rm -rf /tmp/zsign
+# تنزيل zsign وتجميعه بشكل منفصل مع تفادي مشاكل الشبكة
+RUN git clone --depth 1 https://github.com/zhly201/zsign.git /tmp/zsign
+WORKDIR /tmp/zsign
+RUN g++ *.cpp common/*.cpp -lcrypto -O3 -o /usr/local/bin/zsign
+RUN rm -rf /tmp/zsign
 
-# 3. إعداد المجلد الرئيسي وتنسيق العمل
+# إعداد بيئة العمل
 WORKDIR /app
 
-# 4. نسخ التبعيات وتثبيتها
+# نسخ التبعيات وتثبيتها
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. نسخ باقي ملفات البوت
+# نسخ ملفات المشروع
 COPY . .
 
-# 6. تشغيل ملف البوت الرئيسي
+# تشغيل البوت
 CMD ["python", "bot.py"]
