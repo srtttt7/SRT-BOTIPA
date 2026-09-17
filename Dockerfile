@@ -7,14 +7,17 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     git \
     g++ \
+    make \
+    cmake \
     libssl-dev \
+    libmbedtls-dev \
     zip \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/zhlynn/zsign.git /tmp/zsign \
+RUN git clone --recursive https://github.com/zhlynn/zsign.git /tmp/zsign \
     && cd /tmp/zsign \
-    && g++ src/*.cpp -o zsign -lcrypto -lpthread \
+    && g++ *.cpp common/*.cpp -o zsign -lcrypto -lmbedcrypto -lpthread \
     && cp zsign /usr/local/bin/ \
     && rm -rf /tmp/zsign
 
