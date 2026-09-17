@@ -1,23 +1,21 @@
-FROM ubuntu:22.04
+FROM alpine:3.18
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     python3 \
-    python3-pip \
+    py3-pip \
     git \
     g++ \
     make \
     cmake \
-    libssl-dev \
-    libmbedtls-dev \
+    openssl-dev \
     zip \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
+    unzip
 
 RUN git clone --recursive https://github.com/zhlynn/zsign.git /tmp/zsign \
     && cd /tmp/zsign \
-    && g++ *.cpp common/*.cpp -o zsign -lcrypto -lmbedcrypto -lpthread \
+    && mkdir build && cd build \
+    && cmake .. \
+    && make \
     && cp zsign /usr/local/bin/ \
     && rm -rf /tmp/zsign
 
