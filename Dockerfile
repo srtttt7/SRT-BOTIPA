@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     && cd zsign \
     && g++ *.cpp common/*.cpp -lcrypto -O3 -o zsign \
     && mv zsign /usr/local/bin/ \
+    && chmod +x /usr/local/bin/zsign \
     && cd .. && rm -rf zsign \
     && apt-get clean
 
