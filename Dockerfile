@@ -1,24 +1,15 @@
 FROM python:3.10-slim
 
 RUN apt-get update && apt-get install -y \
-    git \
-    g++ \
-    make \
-    cmake \
+    wget \
     libssl-dev \
     zip \
     unzip \
-    wget \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --recursive https://github.com/zhlynn/zsign.git /tmp/zsign \
-    && cd /tmp/zsign \
-    && mkdir build && cd build \
-    && cmake -DCMAKE_BUILD_TYPE=Release .. \
-    && make \
-    && cp zsign /usr/local/bin/ \
-    && chmod +x /usr/local/bin/zsign \
-    && rm -rf /tmp/zsign
+RUN wget -O /usr/local/bin/zsign https://github.com/zhlynn/zsign/raw/master/zsign || \
+    (wget -O /tmp/zsign.tar.gz https://github.com/sachin9/zsign-static/releases/download/v1.0.0/zsign && mv /tmp/zsign /usr/local/bin/zsign) \
+    && chmod +x /usr/local/bin/zsign
 
 WORKDIR /app
 COPY . /app
