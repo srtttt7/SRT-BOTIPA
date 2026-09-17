@@ -19,7 +19,7 @@ from telegram.ext import (
     filters,
 )
 
-# 1. سيرفر خفيف لإبقاء الخدمة نشطة على Render
+# 1. تشغيل سيرفر Flask لإبقاء الخدمة نشطة
 flask_app = Flask(__name__)
 
 
@@ -35,7 +35,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# 2. الإعدادات والمتغيرات
+# 2. الإعدادات والبيانات الأساسية
 TOKEN = os.environ.get(
     'BOT_TOKEN', '8686601094:AAEViStOO6vokqRvEDnFY8Wj2LwtY0eqKHc'
 )
@@ -47,7 +47,7 @@ GITHUB_PAGES_URL = 'https://srtttt7.github.io/Ipa-/index.html'
 WAITING_P12, WAITING_PROV, WAITING_PASS, WAITING_IPA = range(4)
 
 
-# 3. وظائف معالجة الملفات والرفع
+# 3. وظائف معالجة البيانات والرفع
 def get_ipa_info(ipa_path: str):
   app_name, bundle_id, app_version = 'تطبيق', 'com.app.signed', '1.0'
   try:
@@ -67,7 +67,7 @@ def get_ipa_info(ipa_path: str):
           )
           break
   except Exception as e:
-    print(f'Error reading IPA: {e}')
+    print(f'Error reading IPA info: {e}')
   return app_name, bundle_id, app_version
 
 
@@ -81,7 +81,7 @@ def upload_file_catbox(file_path: str):
       if res.status_code == 200:
         return res.text.strip()
   except Exception as e:
-    print(f'Upload error: {e}')
+    print(f'Catbox upload error: {e}')
   return None
 
 
@@ -139,7 +139,7 @@ def make_direct_ota(
   return None, None
 
 
-# 4. التحقق من الاشتراك
+# 4. التحقق من الاشتراك الإجباري
 async def is_user_subscribed(
     user_id: int, context: ContextTypes.DEFAULT_TYPE
 ) -> bool:
@@ -179,7 +179,7 @@ async def check_subscription_guard(
   return True
 
 
-# 5. الأوامر الأساسية
+# 5. الواجهة والأوامر
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   if not await check_subscription_guard(update, context):
     return ConversationHandler.END
@@ -217,7 +217,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# 6. خطوات رفع الشهادة
+# 6. استقبال الشهادات
 async def cert_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
@@ -296,7 +296,7 @@ async def process_pass(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# 7. التوقيع عبر isign
+# 7. التوقيع وطباعة السجلات لتتبع الأخطاء
 async def start_sign_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
@@ -354,9 +354,19 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await file.download_to_drive(input_ipa)
   await status_msg.edit_text('✍️ جاري توقيع التطبيق...')
 
-  # أمر التوقيع باستخدام أداة isign
-  cmd = f'isign -c "{p12_path}" -k "{p12_pass}" -p "{prov_path}" -o "{output_ipa}" "{input_ipa}"'
+  # تشغيل أداة isign مع تتبع نتائج المخرجات
+  if p12_pass:
+    cmd = f'isign -c "{p12_path}" -k "{p12_pass}" -p "{prov_path}" -o "{output_ipa}" "{input_ipa}"'
+  else:
+    cmd = f'isign -c "{p12_path}" -p "{prov_path}" -o "{output_ipa}" "{input_ipa}"'
+
   process = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+  # طباعة المخرجات لتسجيلات Render
+  print('--- ISIGN OUTPUT STDOUT ---')
+  print(process.stdout)
+  print('--- ISIGN OUTPUT STDERR ---')
+  print(process.stderr)
 
   if process.returncode == 0 and os.path.exists(output_ipa):
     await status_msg.edit_text(
@@ -402,7 +412,7 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# 8. معالجة الأزرار العادية
+# 8. معالجة باقي الخيارات
 async def callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -475,7 +485,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# 9. نقطة التشغيل الرئيسية
+# 9. تشغيل البوت
 if __name__ == '__main__':
   app = ApplicationBuilder().token(TOKEN).build()
 
