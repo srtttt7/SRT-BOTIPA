@@ -19,7 +19,7 @@ from telegram.ext import (
     filters,
 )
 
-# تشغيل سيرفر خفيف لإبقاء الخدمة نشطة على Render
+# 1. تشغيل سيرفر خفيف لإبقاء الخدمة نشطة على Render
 flask_app = Flask(__name__)
 
 
@@ -35,7 +35,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# إعدادات البوت
+# 2. إعدادات البوت والبيانات الأساسية
 TOKEN = os.environ.get(
     'BOT_TOKEN', '8686601094:AAEViStOO6vokqRvEDnFY8Wj2LwtY0eqKHc'
 )
@@ -47,6 +47,7 @@ GITHUB_PAGES_URL = 'https://srtttt7.github.io/Ipa-/index.html'
 WAITING_P12, WAITING_PROV, WAITING_PASS, WAITING_IPA = range(4)
 
 
+# 3. وظائف قراءة معلومات التطبيق والرفع
 def get_ipa_info(ipa_path):
   app_name, bundle_id, app_version = 'تطبيق', 'com.app.signed', '1.0'
   try:
@@ -132,6 +133,7 @@ def make_direct_ota(ipa_url, bundle_id, app_version, app_name, user_dir):
   return None, None
 
 
+# 4. تحقق الاشتراك الاجباري
 async def is_user_subscribed(
     user_id: int, context: ContextTypes.DEFAULT_TYPE
 ) -> bool:
@@ -174,6 +176,7 @@ async def check_subscription_guard(
   return True
 
 
+# 5. القائمة الرئيسية والمعالجات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   if not await check_subscription_guard(update, context):
     return ConversationHandler.END
@@ -211,6 +214,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
+# 6. خطوات رفع الشهادة (.p12 و .mobileprovision والسر)
 async def cert_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
@@ -290,6 +294,7 @@ async def process_pass(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
+# 7. عملية استقبال وتوقيع الـ IPA عبر isign
 async def start_sign_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
@@ -348,8 +353,8 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await file.download_to_drive(input_ipa)
   await status_msg.edit_text('✍️ جاري توقيع التطبيق...')
 
-  # تنفيذ أمر التوقيع عبر zsign
-  cmd = f'zsign -k "{p12_path}" -p "{p12_pass}" -m "{prov_path}" -o "{output_ipa}" "{input_ipa}"'
+  # التوقيع باستعمال isign المجهزة بـ Python
+  cmd = f'isign -c "{p12_path}" -k "{p12_pass}" -p "{prov_path}" -o "{output_ipa}" "{input_ipa}"'
   process = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
   if process.returncode == 0 and os.path.exists(output_ipa):
@@ -396,6 +401,7 @@ async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
+# 8. الأزرار التفاعلية
 async def callback_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -464,6 +470,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
+# 9. نقطة التشغيل الرئيسية
 if __name__ == '__main__':
   app = ApplicationBuilder().token(TOKEN).build()
 
