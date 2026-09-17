@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     make \
     cmake \
     libssl-dev \
+    libmbedtls-dev \
     zip \
     unzip \
     && rm -rf /var/lib/apt/lists/*
