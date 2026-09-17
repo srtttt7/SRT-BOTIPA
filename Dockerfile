@@ -14,4 +14,4 @@ COPY . /app
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "bot.py"]
+CMD python3 -m http.server $PORT & python3 bot.py
