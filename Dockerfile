@@ -1,6 +1,6 @@
 FROM python:3.10-slim
 
-# تثبيت الأدوات الأساسية لبناء zsign
+# تثبيت الحزم المطلوبة
 RUN apt-get update && apt-get install -y \
     git \
     build-essential \
@@ -9,16 +9,18 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# تنزيل وبناء أداة zsign مع تفادي مشاكل المصادقة
-RUN git config --global advice.detachedHead false && \
-    git clone --depth 1 https://github.com/zhlynn/zsign.git /zsign && \
-    cd /zsign && \
-    g++ *.cpp common/*.cpp -lcrypto -ldl -O3 -o /usr/local/bin/zsign && \
-    rm -rf /zsign
+# تنزيل وبناء zsign باستخدام cmake
+RUN git clone https://github.com/zhlynn/zsign.git /zsign-src && \
+    mkdir -p /zsign-src/build && \
+    cd /zsign-src/build && \
+    cmake .. && \
+    make -j$(nproc) && \
+    cp zsign /usr/local/bin/ && \
+    rm -rf /zsign-src
 
 WORKDIR /app
 
-# نسخ وتثبيت متطلبات البوت
+# تثبيت متطلبات البوت
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
