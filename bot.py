@@ -1,365 +1,200 @@
+import logging
 import os
-import subprocess
-import zipfile
-import plistlib
-import requests
-import urllib.parse
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from threading import Thread
+
+from flask import Flask
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, 
-    CallbackQueryHandler, filters, ContextTypes, ConversationHandler
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    ConversationHandler,
+    MessageHandler,
+    filters,
 )
 
-TOKEN = "8686601094:AAEViStOO6vokqRvEDnFY8Wj2LwtY0eqKHc"
-CHANNEL_USERNAME = "@srt_ipa7"
-CHANNEL_URL = "https://t.me/srt_ipa7"
-DEVELOPER = "@evv2g"
+# 1. إعداد سيرفر Flask لإرضاء فحص البورت على Render
+app = Flask(__name__)
 
-GITHUB_PAGES_URL = "https://srtttt7.github.io/Ipa-/index.html"
 
-WAITING_P12, WAITING_PROV, WAITING_PASS, WAITING_IPA = range(4)
+@app.route("/")
+def home():
+  return "SRT IPA Signer Bot is Running 24/7!"
 
-def get_ipa_info(ipa_path):
-    app_name, bundle_id, app_version = "تطبيق", "com.app.signed", "1.0"
-    try:
-        with zipfile.ZipFile(ipa_path, 'r') as zip_ref:
-            for file_name in zip_ref.namelist():
-                if file_name.startswith("Payload/") and file_name.endswith(".app/Info.plist"):
-                    plist_data = zip_ref.read(file_name)
-                    plist = plistlib.loads(plist_data)
-                    app_name = plist.get("CFBundleDisplayName") or plist.get("CFBundleName", app_name)
-                    bundle_id = plist.get("CFBundleIdentifier", bundle_id)
-                    app_version = plist.get("CFBundleShortVersionString") or plist.get("CFBundleVersion", app_version)
-                    break
-    except Exception as e:
-        print("Error reading IPA:", e)
-    return app_name, bundle_id, app_version
 
-def upload_file_catbox(file_path):
-    try:
-        url = "https://catbox.moe/user/api.php"
-        data = {"reqtype": "fileupload"}
-        with open(file_path, "rb") as f:
-            files = {"fileToUpload": f}
-            res = requests.post(url, data=data, files=files)
-            if res.status_code == 200:
-                return res.text.strip()
-    except Exception as e:
-        print("Upload Error:", e)
-    return None
+def run_flask():
+  port = int(os.environ.get("PORT", 8080))
+  app.run(host="0.0.0.0", port=port)
 
-def make_direct_ota(ipa_url, bundle_id, app_version, app_name, user_dir):
-    plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>items</key>
-    <array>
-        <dict>
-            <key>assets</key>
-            <array>
-                <dict>
-                    <key>kind</key>
-                    <key>software-package</key>
-                    <key>url</key>
-                    <string>{ipa_url}</string>
-                </dict>
-            </array>
-            <key>metadata</key>
-            <dict>
-                <key>bundle-identifier</key>
-                <string>{bundle_id}</string>
-                <key>bundle-version</key>
-                <string>{app_version}</string>
-                <key>kind</key>
-                <string>software</string>
-                <key>title</key>
-                <string>{app_name}</string>
-            </dict>
-        </dict>
-    </array>
-</dict>
-</plist>'''
-    
-    plist_path = f"{user_dir}/manifest.plist"
-    with open(plist_path, "w", encoding="utf-8") as f:
-        f.write(plist_content)
 
-    plist_url = upload_file_catbox(plist_path)
-    if os.path.exists(plist_path):
-        os.remove(plist_path)
+# تشغيل سيرفر Flask في خيط (Thread) منفصل
+Thread(target=run_flask, daemon=True).start()
 
-    if plist_url:
-        encoded_plist = urllib.parse.quote(plist_url, safe='')
-        install_button_url = f"{GITHUB_PAGES_URL}?plist={encoded_plist}"
-        return install_button_url, plist_url
-    return None, None
+# 2. إعدادات التسجيل (Logging)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
 
-async def is_user_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        return member.status in ['member', 'administrator', 'creator']
-    except Exception:
-        return True
+# حالات المحادثة
+WAITING_P12, WAITING_PROVISION, WAITING_PASSWORD = range(3)
 
-async def check_subscription_guard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    user_id = update.effective_user.id
-    subscribed = await is_user_subscribed(user_id, context)
-    if not subscribed:
-        keyboard = [
-            [InlineKeyboardButton("📢 انضم للقناة أولاً", url=CHANNEL_URL)],
-            [InlineKeyboardButton("✅ تحقق من الاشتراك", callback_data='check_sub')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        text = "⚠️ يجب عليك الاشتراك في القناة أولاً لاستخدام البوت:\n" + CHANNEL_USERNAME
-        
-        if update.callback_query:
-            await update.callback_query.message.reply_text(text, reply_markup=reply_markup)
-        elif update.message:
-            await update.message.reply_text(text, reply_markup=reply_markup)
-        return False
-    return True
+# مسار حفظ الشهادات
+CERT_DIR = "certificates"
+os.makedirs(CERT_DIR, exist_ok=True)
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_subscription_guard(update, context):
-        return ConversationHandler.END
+  keyboard = [
+      [InlineKeyboardButton("📂 رفع شهادة جديدة", callback_data="upload_cert")],
+      [
+          InlineKeyboardButton(
+              "🔍 فحص الشهادة", callback_data="check_cert"
+          ),
+          InlineKeyboardButton("🗑️ حذف الشهادة", callback_data="delete_cert"),
+      ],
+      [InlineKeyboardButton("❓ مساعدة", callback_data="help")],
+  ]
+  reply_markup = InlineKeyboardMarkup(keyboard)
 
-    user_id = update.effective_user.id
-    user_dir = f"users/{user_id}"
-    os.makedirs(user_dir, exist_ok=True)
+  user_id = update.effective_user.id
+  p12_exists = os.path.exists(f"{CERT_DIR}/{user_id}.p12")
+  prov_exists = os.path.exists(f"{CERT_DIR}/{user_id}.mobileprovision")
 
-    keyboard = [
-        [InlineKeyboardButton("✍️ توقيع تطبيق IPA", callback_data='start_sign')],
-        [InlineKeyboardButton("📁 رفع شهادة جديدة", callback_data='start_cert_flow')],
-        [InlineKeyboardButton("🔍 فحص الشهادة", callback_data='check_cert'), InlineKeyboardButton("🗑️ حذف الشهادة", callback_data='delete_cert')],
-        [InlineKeyboardButton("❓ مساعدة", callback_data='help')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    msg_text = (
-        "مرحبا في بوت توقيع ملفات ipa 📲\n\n"
-        f"👨‍💻 **مطور البوت:** {DEVELOPER}\n\n"
-        "إضغط على **'توقيع تطبيق IPA'** لتوقيع ملفاتك مباشرة بعد رفع الشهادة."
+  status_msg = f"""
+📊 **حالة الشهادة الحالية:**
+
+• ملف `p12`: {'✅ موجود' if p12_exists else '❌ غير موجود'}
+• ملف `mobileprovision`: {'✅ موجود' if prov_exists else '❌ غير موجود'}
+"""
+  if update.message:
+    await update.message.reply_text(status_msg, reply_markup=reply_markup)
+  else:
+    await update.callback_query.edit_message_text(
+        status_msg, reply_markup=reply_markup
     )
-    await update.message.reply_text(msg_text, reply_markup=reply_markup, parse_mode="Markdown")
+
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  query = update.callback_query
+  await query.answer()
+
+  if query.data == "upload_cert":
+    await query.edit_message_text(
+        "1️⃣ **الخطوة الأولى:** أرسل الآن ملف الشهادة `p12.` كُمستند."
+    )
+    return WAITING_P12
+  elif query.data == "delete_cert":
+    user_id = query.from_user.id
+    for ext in [".p12", ".mobileprovision", ".txt"]:
+      path = f"{CERT_DIR}/{user_id}{ext}"
+      if os.path.exists(path):
+        os.remove(path)
+    await query.edit_message_text("🗑️ تم حذف الشهادة الخاصة بك بنجاح!")
     return ConversationHandler.END
 
-async def cert_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if not await check_subscription_guard(update, context):
-        return ConversationHandler.END
 
-    await query.message.reply_text("1️⃣ **الخطوة الأولى:** أرسل الآن ملف الشهادة `.p12` كمستند.")
+async def handle_p12(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  doc = update.message.document
+  if not doc:
+    await update.message.reply_text("❌ يرجى إرسال الملف كُمستند.")
     return WAITING_P12
 
-async def process_p12(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_dir = f"users/{user_id}"
-    os.makedirs(user_dir, exist_ok=True)
+  file_name = doc.file_name.lower() if doc.file_name else ""
+  if not file_name.endswith(".p12"):
+    await update.message.reply_text(
+        "❌ هذا ليس ملف `.p12` صحيح، يرجى إعادة الإرسال."
+    )
+    return WAITING_P12
 
-    doc = update.message.document
-    if not doc or not doc.file_name.lower().endswith('.p12'):
-        await update.message.reply_text("❌ خطأ: يرجى إرسال ملف بصيغة `.p12` فقط!")
-        return WAITING_P12
+  user_id = update.effective_user.id
+  file = await context.bot.get_file(doc.file_id)
+  await file.download_to_drive(f"{CERT_DIR}/{user_id}.p12")
 
-    file = await context.bot.get_file(doc.file_id)
-    await file.download_to_drive(f"{user_dir}/cert.p12")
+  await update.message.reply_text(
+      "✅ تم حفظ ملف `p12.` بنجاح!\n\n2️⃣ **الخطوة الثانية:** أرسل الآن ملف"
+      " `mobileprovision.` كُمستند."
+  )
+  return WAITING_PROVISION
 
-    await update.message.reply_text("✅ تم حفظ ملف `.p12` بنجاح!\n\n2️⃣ **الخطوة الثانية:** أرسل الآن ملف `.mobileprovision` كمستند.")
-    return WAITING_PROV
 
-async def process_prov(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_dir = f"users/{user_dir}"
+async def handle_provision(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  doc = update.message.document
+  if not doc:
+    await update.message.reply_text("❌ يرجى إرسال الملف كُمستند.")
+    return WAITING_PROVISION
 
-    doc = update.message.document
-    if not doc or not doc.file_name.lower().endswith('.mobileprovision'):
-        await update.message.reply_text("❌ خطأ: يرجى إرسال ملف بصيغة `.mobileprovision` فقط!")
-        return WAITING_PROV
+  file_name = doc.file_name.lower() if doc.file_name else ""
+  # الفحص المرن يقبل كلا الامتدادين وبدون تدقيق الحروف
+  if not (
+      file_name.endswith(".mobileprovision") or file_name.endswith(".provision")
+  ):
+    await update.message.reply_text(
+        "❌ هذا ليس ملف `mobileprovision.` صحيح، يرجى التأكد وإعادة الإرسال."
+    )
+    return WAITING_PROVISION
 
-    file = await context.bot.get_file(doc.file_id)
-    await file.download_to_drive(f"{user_dir}/cert.mobileprovision")
+  user_id = update.effective_user.id
+  file = await context.bot.get_file(doc.file_id)
+  await file.download_to_drive(f"{CERT_DIR}/{user_id}.mobileprovision")
 
-    await update.message.reply_text("✅ تم حفظ ملف `.mobileprovision` بنجاح!\n\n3️⃣ **الخطوة الثالثة:** أرسل كلمة سر الشهادة الآن (إذا لم توجد كلمة سر أرسل الرقم 0).")
-    return WAITING_PASS
+  await update.message.reply_text(
+      "✅ تم حفظ ملف `mobileprovision.` بنجاح!\n\n3️⃣ **الخطوة الثالثة:**"
+      " أرسل الآن كلمة سر الشهادة (P12 Password)."
+  )
+  return WAITING_PASSWORD
 
-async def process_pass(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_dir = f"users/{user_id}"
-    password = update.message.text.strip()
 
-    if password == "0":
-        password = ""
+async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  password = update.message.text
+  user_id = update.effective_user.id
 
-    with open(f"{user_dir}/pass.txt", "w") as f:
-        f.write(password)
+  with open(f"{CERT_DIR}/{user_id}.txt", "w") as f:
+    f.write(password)
 
-    await update.message.reply_text("🎉 تم حفظ الشهادة بنجاح! إضغط على زر 'توقيع تطبيق IPA' وأرسل تطبيقك.")
-    return ConversationHandler.END
+  await update.message.reply_text(
+      "🎉 **تمت إضافة الشهادة بنجاح!**\nيمكنك الآن إرسال أي ملف IPA لتوقيعه"
+      " مباشرة."
+  )
+  return ConversationHandler.END
 
-async def start_sign_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user_id = update.effective_user.id
-    user_dir = os.path.abspath(f"users/{user_id}")
-    p12_path = f"{user_dir}/cert.p12"
-    prov_path = f"{user_dir}/cert.mobileprovision"
-
-    if not os.path.exists(p12_path) or not os.path.exists(prov_path):
-        await query.message.reply_text("❌ يرجى إعداد ورفع الشهادة أولاً بالضغط على 'رفع شهادة جديدة'.")
-        return ConversationHandler.END
-
-    await query.message.reply_text("📲 **أرسل الآن ملف تطبيق الـ IPA المُراد توقيعه:**")
-    return WAITING_IPA
-
-async def handle_ipa_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_subscription_guard(update, context):
-        return ConversationHandler.END
-
-    user_id = update.effective_user.id
-    user_dir = os.path.abspath(f"users/{user_id}")
-    doc = update.message.document
-
-    if not doc or not doc.file_name.lower().endswith('.ipa'):
-        await update.message.reply_text("❌ يرجى إرسال ملف بصيغة `.ipa` فقط!")
-        return WAITING_IPA
-
-    p12_path = f"{user_dir}/cert.p12"
-    prov_path = f"{user_dir}/cert.mobileprovision"
-    pass_path = f"{user_dir}/pass.txt"
-
-    p12_pass = ""
-    if os.path.exists(pass_path):
-        with open(pass_path, "r") as f:
-            p12_pass = f.read().strip()
-
-    status_msg = await update.message.reply_text("⏳ جاري تنزيل ملف الـ IPA...")
-    file = await context.bot.get_file(doc.file_id)
-
-    input_ipa = f"{user_dir}/input.ipa"
-    output_ipa = f"{user_dir}/signed_{doc.file_name}"
-
-    if os.path.exists(input_ipa): os.remove(input_ipa)
-    if os.path.exists(output_ipa): os.remove(output_ipa)
-
-    await file.download_to_drive(input_ipa)
-    await status_msg.edit_text("✍️ جاري توقيع التطبيق...")
-
-    cmd = f'proot -b $PREFIX/tmp:/tmp zsign -k "{p12_path}" -p "{p12_pass}" -m "{prov_path}" -o "{output_ipa}" "{input_ipa}"'
-    process = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-
-    if process.returncode == 0 and os.path.exists(output_ipa):
-        await status_msg.edit_text("⚡ تم التوقيع بنجاح! جاري إعداد زر التثبيت المباشر...")
-
-        app_name, bundle_id, app_version = get_ipa_info(output_ipa)
-        ipa_download_url = upload_file_catbox(output_ipa)
-
-        if ipa_download_url:
-            install_button_url, plist_url = make_direct_ota(ipa_download_url, bundle_id, app_version, app_name, user_dir)
-
-            msg_response = (
-                f"📲 **معلومات التطبيق** 📲\n\n"
-                f"• **AppName:** `{app_name}`\n"
-                f"• **AppVersion:** `{app_version}`\n"
-                f"• **BundleID:** `{bundle_id}`"
-            )
-
-            keyboard = [[InlineKeyboardButton("📲 تثبيت", url=install_button_url)]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await status_msg.edit_text(msg_response, reply_markup=reply_markup, parse_mode="Markdown")
-        else:
-            await status_msg.edit_text("❌ حدث خطأ أثناء رفع الملف لإنشاء رابط التثبيت.")
-
-        if os.path.exists(input_ipa): os.remove(input_ipa)
-        if os.path.exists(output_ipa): os.remove(output_ipa)
-    else:
-        err_out = process.stderr if process.stderr else process.stdout
-        err_out_clean = str(err_out)[:500]
-        await status_msg.edit_text("❌ حدث خطأ أثناء التوقيع:\n\n`" + err_out_clean + "`", parse_mode="Markdown")
-
-    return ConversationHandler.END
-
-async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == 'check_sub':
-        if await is_user_subscribed(update.effective_user.id, context):
-            await query.message.reply_text("✅ شكراً لاشتراكك! أرسل /start للبدء.")
-        else:
-            await query.message.reply_text("❌ لم تنضم للقناة بعد.")
-        return
-
-    if not await check_subscription_guard(update, context):
-        return
-
-    user_id = update.effective_user.id
-    user_dir = f"users/{user_id}"
-
-    if query.data == 'check_cert':
-        p12_exists = "✅ موجود" if os.path.exists(f"{user_dir}/cert.p12") else "❌ غير موجود"
-        prov_exists = "✅ موجود" if os.path.exists(f"{user_dir}/cert.mobileprovision") else "❌ غير موجود"
-        pass_exists = "✅ مضافة" if os.path.exists(f"{user_dir}/pass.txt") else "❌ غير مضافة"
-
-        msg = f"📊 **حالة الشهادة الحالية:**\n\n• ملف `.p12`: {p12_exists}\n• ملف `.mobileprovision`: {prov_exists}\n• كلمة سر الشهادة: {pass_exists}"
-        await query.message.reply_text(msg, parse_mode="Markdown")
-
-    elif query.data == 'delete_cert':
-        files_to_remove = [f"{user_dir}/cert.p12", f"{user_dir}/cert.mobileprovision", f"{user_dir}/pass.txt"]
-        deleted = False
-        for f in files_to_remove:
-            if os.path.exists(f):
-                os.remove(f)
-                deleted = True
-        
-        if deleted:
-            await query.message.reply_text("🗑️ **تم حذف جميع ملفات الشهادة المرفوقة بنجاح.**", parse_mode="Markdown")
-        else:
-            await query.message.reply_text("ℹ️ لا توجد شهادة مضافة لحذفها.")
-
-    elif query.data == 'help':
-        await query.message.reply_text("ℹ️ **كيفية الاستخدام:**\n\n1. اضغط على 'رفع شهادة جديدة'.\n2. أرسل ملف .p12 ثم .mobileprovision ثم كلمة السر.\n3. اضغط على 'توقيع تطبيق IPA' وأرسل تطبيقك ليتم تثبيته بلمسة واحدة.")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("تم إلغاء العملية.")
-    return ConversationHandler.END
+  await update.message.reply_text("تم إلغاء العملية.")
+  return ConversationHandler.END
 
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
 
-    cert_handler = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(cert_flow_start, pattern='^start_cert_flow$'),
-            CommandHandler("upload", cert_flow_start)
-        ],
-        states={
-            WAITING_P12: [MessageHandler(filters.Document.ALL & ~filters.COMMAND, process_p12)],
-            WAITING_PROV: [MessageHandler(filters.Document.ALL & ~filters.COMMAND, process_prov)],
-            WAITING_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_pass)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=False
-    )
+def main():
+  # استخراج التوكن من متغيرات البيئة
+  TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا_إذا_لم_تستخدم_ENV")
 
-    sign_handler = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(start_sign_flow, pattern='^start_sign$')
-        ],
-        states={
-            WAITING_IPA: [MessageHandler(filters.Document.ALL & ~filters.COMMAND, handle_ipa_file)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=False
-    )
+  application = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(cert_handler)
-    app.add_handler(sign_handler)
-    app.add_handler(CallbackQueryHandler(callback_handler))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_ipa_file))
+  cert_handler = ConversationHandler(
+      entry_points=[CallbackQueryHandler(button_handler, pattern="^upload_cert$")],
+      states={
+          WAITING_P12: [
+              MessageHandler(filters.Document.ALL, handle_p12)
+          ],
+          WAITING_PROVISION: [
+              MessageHandler(filters.Document.ALL, handle_provision)
+          ],
+          WAITING_PASSWORD: [
+              MessageHandler(filters.TEXT & ~filters.COMMAND, handle_password)
+          ],
+      },
+      fallbacks=[CommandHandler("cancel", cancel)],
+      per_message=False,
+  )
 
-    print("Bot is running...")
-    app.run_polling()
+  application.add_handler(CommandHandler("start", start))
+  application.add_handler(cert_handler)
+  application.add_handler(CallbackQueryHandler(button_handler))
 
+  print("Bot is running...")
+  application.run_polling()
+
+
+if __name__ == "__main__":
+  main()
